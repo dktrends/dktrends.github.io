@@ -38,20 +38,23 @@ function sparkPoints(values) {
 function actionLabel(action) {
   return { detect:"포착", analyze:"분석", insight:"인사이트", risk:"위험", opportunity:"기회" }[action] || action;
 }
-function themeCard(theme) {
+function themeCard(theme, interactive = true) {
   const status = theme.state === "active" ? "EXPANDING" : theme.state === "observe" ? "OBSERVE" : String(theme.state || "WATCH").toUpperCase();
-  return `<button class="theme-card" type="button" data-theme="${esc(theme.id)}">
+  const tag = interactive ? "button" : "div";
+  const attributes = interactive ? `type="button" data-theme="${esc(theme.id)}"` : "";
+  return `<${tag} class="theme-card" ${attributes}>
     <span class="theme-art"></span><span class="theme-content"><span class="status ${esc(theme.state)}">${esc(status)}</span>
     <span class="theme-name">${esc(theme.name)}</span><span class="theme-description">${esc(theme.description || "시장의 관심 흐름을 관찰 중입니다.")}</span>
-    <span class="theme-metrics"><span class="metric"><small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong></span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks || theme.stockCodes?.length)}개</strong></span></span></span></button>`;
+    <span class="theme-metrics"><span class="metric"><small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong></span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks || theme.stockCodes?.length)}개</strong></span></span></span></${tag}>`;
 }
 function stockCard(stock) {
   const values = (stock.intraday || []).map(point => Number(point.price));
   const direction = Number(stock.changePct) > 0 ? "up" : Number(stock.changePct) < 0 ? "down" : "";
   const actions = Array.isArray(stock.actions) ? stock.actions : String(stock.actions || "").split(",").filter(Boolean);
+  const priceText = stock.price == null ? "₩—" : `₩${number(stock.price)}`;
   return `<a class="stock-card" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer">
     <span class="stock-top"><span><span class="stock-name">${esc(stock.name || "—")}</span><span class="stock-code">${esc(stock.code || "—")}</span></span><span class="attention-dot"></span></span>
-    <span class="stock-main"><span><span class="price">₩${number(stock.price)}</span><span class="change ${direction}">${pct(stock.changePct)}</span></span><svg class="spark" viewBox="0 0 94 34" aria-hidden="true"><polyline points="${sparkPoints(values)}"/></svg></span>
+    <span class="stock-main"><span><span class="price">${priceText}</span><span class="change ${direction}">${pct(stock.changePct)}</span></span><svg class="spark" viewBox="0 0 94 34" aria-hidden="true"><polyline points="${sparkPoints(values)}"/></svg></span>
     <span class="stock-actions">${actions.map(action => `<span class="action ${esc(action)}">${esc(actionLabel(action))}</span>`).join("")}</span>
     <span class="stock-meta"><span class="stock-tag">관심도 ${esc(String(stock.attention || "watch").toUpperCase())}</span><span>${esc(stock.market || "KRX")}</span></span></a>`;
 }
@@ -104,9 +107,16 @@ function archiveCard(item) {
   const themes = (item.themes || []).slice(0,2).map(normalizeTheme);
   const stocks = (item.stocks || []).slice(0,6).map(normalizeStock);
   const time = item.timeKst || item.time;
-  return `<article class="archive-card"><div class="archive-time"><small>${time ? formatKst(time,{month:"2-digit",day:"2-digit"}) : "—"}</small><strong>${time ? hhmm(time) : "—"}</strong></div>
-    <div class="archive-themes">${themes.map(theme => `<span>${esc(theme.name)}</span>`).join("")}</div>
-    <div class="archive-stocks">${stocks.map(stock => `<span class="mini-stock"><b>${esc(stock.name)}</b>${esc(stock.code)}<i>${pct(stock.changePct)}</i></span>`).join("")}</div></article>`;
+  themes.forEach(theme => {
+    theme.id ||= `archive-${String(theme.name || "theme").replace(/\s+/g,"-")}`;
+    theme.description ||= "해당 조사 시점에 포착된 관심 테마입니다.";
+    theme.relatedStocks ||= stocks.filter(stock => !theme.stockCodes || theme.stockCodes.includes(stock.code)).length;
+  });
+  return `<article class="snapshot-block">
+    <header class="snapshot-head"><div><span class="live">RADAR</span><strong>${time ? hhmm(time) : "—"} KST</strong></div><small>${time ? formatKst(time,{year:"numeric",month:"2-digit",day:"2-digit"}) : "—"}</small></header>
+    <section class="content-section"><h2>관심 테마 <span class="count">${themes.length}</span></h2><div class="theme-grid">${themes.map(theme => themeCard(theme, false)).join("")}</div></section>
+    <section class="content-section"><h2>관심 종목 <span class="count">${stocks.length}</span></h2><div class="stock-grid">${stocks.map(stockCard).join("")}</div></section>
+  </article>`;
 }
 async function loadArchive(view, offset = 0) {
   const target = archiveTarget(view, offset);
