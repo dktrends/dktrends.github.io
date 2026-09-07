@@ -1,0 +1,2 @@
+# Local development only. Never commit the real token.
+INGEST_TOKEN=replace-with-a-long-random-value

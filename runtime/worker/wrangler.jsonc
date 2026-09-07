@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dk-trends-radar-ingest",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RADAR_WRITER",
+        "class_name": "RadarWriter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RadarWriter"]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "RADAR_BUCKET",
+      "bucket_name": "dk-trends-ingest-staging"
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "dk-trends-radar-ingest-staging",
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "RADAR_WRITER",
+            "class_name": "RadarWriter"
+          }
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "RADAR_BUCKET",
+          "bucket_name": "dk-trends-ingest-staging"
+        }
+      ]
+    },
+    "production": {
+      "name": "dk-trends-radar-ingest",
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "RADAR_WRITER",
+            "class_name": "RadarWriter"
+          }
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "RADAR_BUCKET",
+          "bucket_name": "dk-trends"
+        }
+      ]
+    }
+  }
+}
