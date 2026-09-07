@@ -128,7 +128,8 @@ async function loadArchive(view, offset = 0) {
   try {
     const response = await fetch(target.url, { cache:"no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json(), items = (data.items || []).slice().reverse();
+    const data = await response.json();
+    const items = (data.items || []).slice().sort((a,b) => new Date(b.timeKst || b.time || 0) - new Date(a.timeKst || a.time || 0));
     $("#archive-count").textContent = `${items.length} RADAR${items.length === 1 ? "" : "S"}`;
     $("#archive-list").innerHTML = items.length ? items.map(archiveCard).join("") : '<div class="message">이 기간에 저장된 Radar가 없습니다.</div>';
   } catch (_) {
