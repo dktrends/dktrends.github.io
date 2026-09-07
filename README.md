@@ -7,6 +7,7 @@ DK Trends의 시장 Radar를 표시하는 GitHub Pages 정적 사이트입니다
 - `index.html` — Now 및 기간별 Radar 화면
 - `assets/css/styles.css` — DK Trends 디자인 시스템과 반응형 레이아웃
 - `assets/js/app.js` — 실시간 Radar와 R2 아카이브 렌더링
+- `assets/images/` — 공식 심벌, 워드마크, 통합형 SVG 로고
 
 ## 데이터
 
