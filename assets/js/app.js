@@ -5,6 +5,17 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value = "") => String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
 const number = value => Number(value || 0).toLocaleString("ko-KR");
 const pct = value => `${Number(value) > 0 ? "+" : ""}${Number(value || 0).toFixed(2).replace(/\.00$/, "")}%`;
+const THEME_ART = {
+  "ai-infra":"ai-data-center.jpg", "ai":"ai-data-center.jpg", "semiconductor":"ai-data-center.jpg",
+  "secondary-battery":"ev-battery.jpg", "ev":"ev-battery.jpg", "renewable-energy":"ev-battery.jpg",
+  "market":"market-chart.jpg", "finance":"market-chart.jpg", "value-up":"market-chart.jpg",
+  "shipping":"supply-chain.jpg", "supply-chain":"supply-chain.jpg", "raw-materials":"supply-chain.jpg",
+  "global-markets":"global-markets.jpg"
+};
+function themeArt(theme) {
+  const key = theme.art || theme.background || theme.id || "market";
+  return `assets/images/card-backgrounds/${THEME_ART[key] || THEME_ART.market}`;
+}
 
 function kstDate(date = new Date()) {
   return new Date(date.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
@@ -38,14 +49,12 @@ function sparkPoints(values) {
 function actionLabel(action) {
   return { detect:"포착", analyze:"분석", insight:"인사이트", risk:"위험", opportunity:"기회" }[action] || action;
 }
-function themeCard(theme, interactive = true) {
+function themeCard(theme) {
   const status = theme.state === "active" ? "EXPANDING" : theme.state === "observe" ? "OBSERVE" : String(theme.state || "WATCH").toUpperCase();
-  const tag = interactive ? "button" : "div";
-  const attributes = interactive ? `type="button" data-theme="${esc(theme.id)}"` : "";
-  return `<${tag} class="theme-card" ${attributes}>
-    <span class="theme-art"></span><span class="theme-content"><span class="status ${esc(theme.state)}">${esc(status)}</span>
+  return `<div class="theme-card">
+    <span class="theme-art" style="background-image:url('${esc(themeArt(theme))}')"></span><span class="theme-content"><span class="status ${esc(theme.state)}">${esc(status)}</span>
     <span class="theme-name">${esc(theme.name)}</span><span class="theme-description">${esc(theme.description || "시장의 관심 흐름을 관찰 중입니다.")}</span>
-    <span class="theme-metrics"><span class="metric"><small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong></span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks || theme.stockCodes?.length)}개</strong></span></span></span></${tag}>`;
+    <span class="theme-metrics"><span class="metric"><small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong></span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks || theme.stockCodes?.length)}개</strong></span></span></span></div>`;
 }
 function stockCard(stock) {
   const values = (stock.intraday || []).map(point => Number(point.price));
@@ -103,19 +112,21 @@ function archiveTarget(view, offset = 0) {
 }
 function normalizeTheme(theme) { return Array.isArray(theme) ? { name:theme[0], state:theme[1] } : theme; }
 function normalizeStock(stock) { return Array.isArray(stock) ? { code:stock[0], name:stock[1], changePct:stock[2], actions:stock[3], attention:stock[4] } : stock; }
+function archiveTheme(theme) {
+  return `<span class="mini-theme"><i aria-hidden="true">◎</i><b>${esc(theme.name || "—")}</b></span>`;
+}
+function archiveStock(stock) {
+  const direction = Number(stock.changePct) > 0 ? "up" : Number(stock.changePct) < 0 ? "down" : "";
+  return `<a class="mini-stock" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer"><b>${esc(stock.name || "—")}</b><small>${esc(stock.code || "—")}</small><i class="${direction}">${pct(stock.changePct)}</i></a>`;
+}
 function archiveCard(item) {
   const themes = (item.themes || []).slice(0,2).map(normalizeTheme);
   const stocks = (item.stocks || []).slice(0,6).map(normalizeStock);
   const time = item.timeKst || item.time;
-  themes.forEach(theme => {
-    theme.id ||= `archive-${String(theme.name || "theme").replace(/\s+/g,"-")}`;
-    theme.description ||= "해당 조사 시점에 포착된 관심 테마입니다.";
-    theme.relatedStocks ||= stocks.filter(stock => !theme.stockCodes || theme.stockCodes.includes(stock.code)).length;
-  });
-  return `<article class="snapshot-block">
-    <header class="snapshot-head"><div><span class="live">RADAR</span><strong>${time ? hhmm(time) : "—"} KST</strong></div><small>${time ? formatKst(time,{year:"numeric",month:"2-digit",day:"2-digit"}) : "—"}</small></header>
-    <section class="content-section"><h2>관심 테마 <span class="count">${themes.length}</span></h2><div class="theme-grid">${themes.map(theme => themeCard(theme, false)).join("")}</div></section>
-    <section class="content-section"><h2>관심 종목 <span class="count">${stocks.length}</span></h2><div class="stock-grid">${stocks.map(stockCard).join("")}</div></section>
+  return `<article class="archive-card">
+    <header class="archive-time"><small>${time ? formatKst(time,{year:"numeric",month:"2-digit",day:"2-digit"}) : "—"}</small><strong>${time ? hhmm(time) : "—"}</strong><span>RADAR SNAPSHOT</span></header>
+    <section class="archive-themes" aria-label="관심 테마"><small>THEMES</small>${themes.map(archiveTheme).join("")}</section>
+    <section class="archive-stocks" aria-label="관심 종목">${stocks.map(archiveStock).join("")}</section>
   </article>`;
 }
 async function loadArchive(view, offset = 0) {
@@ -144,23 +155,11 @@ function setView(view) {
   $("#view-archive").classList.toggle("active", view !== "now");
   if (view !== "now") loadArchive(view);
 }
-function openTheme(id) {
-  const theme = state.radar?.themes?.find(item => item.id === id); if (!theme) return;
-  $("#dialog-state").textContent = theme.state; $("#dialog-title").textContent = theme.name; $("#dialog-description").textContent = theme.description;
-  $("#dialog-metrics").innerHTML = `<span>검색 관심도 ${pct(theme.attentionChange)}</span><span>관련 종목 ${number(theme.relatedStocks)}개</span>`;
-  const stocks = (state.radar.stocks || []).filter(stock => (theme.stockCodes || []).includes(stock.code));
-  $("#dialog-stocks").innerHTML = stocks.length ? stocks.map(stockCard).join("") : '<div class="message">관련 종목이 없습니다.</div>';
-  $("#theme-dialog").showModal();
-}
-
 document.addEventListener("click", event => {
   const nav = event.target.closest("[data-view], [data-view-link]"); if (nav) { event.preventDefault(); setView(nav.dataset.view || nav.dataset.viewLink); }
-  const theme = event.target.closest("[data-theme]"); if (theme) openTheme(theme.dataset.theme);
   const control = event.target.closest("[data-offset]"); if (control) { state.offset=Number(control.dataset.offset); loadArchive(state.view,state.offset); }
 });
 $("#refresh-button").addEventListener("click", loadRadar);
-$(".dialog-close").addEventListener("click", () => $("#theme-dialog").close());
-$("#theme-dialog").addEventListener("click", event => { if (event.target === $("#theme-dialog")) $("#theme-dialog").close(); });
 window.addEventListener("hashchange", () => { const view=location.hash.slice(1); if (["now","today","week","month"].includes(view)) setView(view); });
 $("#year").textContent = new Date().getFullYear(); updateClock(); setInterval(updateClock,1000); loadRadar();
 const initialView = location.hash.slice(1); if (["today","week","month"].includes(initialView)) setView(initialView);
