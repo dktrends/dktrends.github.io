@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "radarId": "20260907-0930",
+  "timeKst": "2026-09-06T20:30:00-04:00",
+  "themes": [
+    {"id":"ai-infra","name":"AI 인프라","state":"active","description":"AI 반도체·데이터센터 관심","attentionChange":184,"stockCodes":["005930","000660","035420"],"relatedStocks":3},
+    {"id":"secondary-battery","name":"2차전지","state":"observe","description":"배터리 소재·전기차 밸류체인 관심","attentionChange":72,"stockCodes":["247540","068270","035720"],"relatedStocks":3}
+  ],
+  "stocks": [
+    {"code":"005930","name":"삼성전자","market":"KRX","price":255500,"changePct":2.2,"attention":"high","actions":["detect","analyze"],"intraday":[{"price":252500},{"price":254000},{"price":253500},{"price":255500}]},
+    {"code":"000660","name":"SK하이닉스","market":"KRX","price":1647000,"changePct":3.2,"attention":"high","actions":["detect","insight"],"intraday":[{"price":1620000},{"price":1635000},{"price":1630000},{"price":1647000}]},
+    {"code":"035420","name":"NAVER","market":"KRX","price":213500,"changePct":2.89,"attention":"medium","actions":["analyze"],"intraday":[{"price":210000},{"price":211500},{"price":212000},{"price":213500}]},
+    {"code":"247540","name":"에코프로비엠","market":"KOSDAQ","price":106000,"changePct":-0.47,"attention":"medium","actions":["detect","risk"],"intraday":[{"price":109300},{"price":107800},{"price":106500},{"price":106000}]},
+    {"code":"068270","name":"셀트리온","market":"KRX","price":188100,"changePct":0.53,"attention":"medium","actions":["analyze"],"intraday":[{"price":186600},{"price":187200},{"price":188700},{"price":188100}]},
+    {"code":"035720","name":"카카오","market":"KRX","price":36200,"changePct":2.4,"attention":"medium","actions":["detect"],"intraday":[{"price":35600},{"price":35800},{"price":35950},{"price":36200}]}
+  ]
+}
