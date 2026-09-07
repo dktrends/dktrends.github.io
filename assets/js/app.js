@@ -5,8 +5,9 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value = "") => String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
 const number = value => Number(value || 0).toLocaleString("ko-KR");
 const pct = value => `${Number(value) > 0 ? "+" : ""}${Number(value || 0).toFixed(2).replace(/\.00$/, "")}%`;
+const normalizedState = value => String(value || "watch").toLowerCase();
 const THEME_ART = {
-  "ai-infra":"ai-data-center.jpg", "ai":"ai-data-center.jpg", "semiconductor":"ai-data-center.jpg",
+  "ai-infra":"ai-data-center.jpg", "ai-memory":"ai-data-center.jpg", "ai":"ai-data-center.jpg", "semiconductor":"ai-data-center.jpg",
   "secondary-battery":"ev-battery.jpg", "ev":"ev-battery.jpg", "renewable-energy":"ev-battery.jpg",
   "market":"market-chart.jpg", "finance":"market-chart.jpg", "value-up":"market-chart.jpg",
   "shipping":"supply-chain.jpg", "supply-chain":"supply-chain.jpg", "raw-materials":"supply-chain.jpg",
@@ -50,25 +51,41 @@ function actionLabel(action) {
   return { detect:"포착", analyze:"분석", insight:"인사이트", risk:"위험", opportunity:"기회" }[action] || action;
 }
 function themeCard(theme) {
-  const status = theme.state === "active" ? "EXPANDING" : theme.state === "observe" ? "OBSERVE" : String(theme.state || "WATCH").toUpperCase();
+  const stateValue = normalizedState(theme.state);
+  const status = ["active","expanding"].includes(stateValue) ? "EXPANDING" : stateValue === "observe" ? "OBSERVE" : String(theme.state || "WATCH").toUpperCase();
+  const firstMetric = theme.confidence
+    ? `<small>신뢰도</small><strong class="teal">${esc(String(theme.confidence).toUpperCase())}</strong>`
+    : `<small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong>`;
   return `<div class="theme-card">
-    <span class="theme-art" style="background-image:url('${esc(themeArt(theme))}')"></span><span class="theme-content"><span class="status ${esc(theme.state)}">${esc(status)}</span>
-    <span class="theme-name">${esc(theme.name)}</span><span class="theme-description">${esc(theme.description || "시장의 관심 흐름을 관찰 중입니다.")}</span>
-    <span class="theme-metrics"><span class="metric"><small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong></span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks || theme.stockCodes?.length)}개</strong></span></span></span></div>`;
+    <span class="theme-art" style="background-image:url('${esc(themeArt(theme))}')"></span><span class="theme-content"><span class="status ${esc(stateValue)}">${esc(status)}</span>
+    <span class="theme-name">${esc(theme.name)}</span><span class="theme-description">${esc(theme.summary || theme.description || "시장의 관심 흐름을 관찰 중입니다.")}</span>
+    <span class="theme-metrics"><span class="metric">${firstMetric}</span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks ?? theme.stockCodes?.length ?? theme.stocks?.length)}개</strong></span></span></span></div>`;
 }
 function stockCard(stock) {
   const values = (stock.intraday || []).map(point => Number(point.price));
-  const direction = Number(stock.changePct) > 0 ? "up" : Number(stock.changePct) < 0 ? "down" : "";
+  const hasChange = stock.changePct != null && stock.changePct !== "";
+  const direction = hasChange && Number(stock.changePct) > 0 ? "up" : hasChange && Number(stock.changePct) < 0 ? "down" : "";
   const actions = Array.isArray(stock.actions) ? stock.actions : String(stock.actions || "").split(",").filter(Boolean);
   const priceText = stock.price == null ? "₩—" : `₩${number(stock.price)}`;
   return `<a class="stock-card" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer">
-    <span class="stock-top"><span><span class="stock-name">${esc(stock.name || "—")}</span><span class="stock-code">${esc(stock.code || "—")}</span></span><span class="attention-dot"></span></span>
-    <span class="stock-main"><span><span class="price">${priceText}</span><span class="change ${direction}">${pct(stock.changePct)}</span></span><svg class="spark" viewBox="0 0 94 34" aria-hidden="true"><polyline points="${sparkPoints(values)}"/></svg></span>
+    <span class="stock-top"><span><span class="stock-name">${esc(stock.name || stock.code || "—")}</span>${stock.name ? `<span class="stock-code">${esc(stock.code || "—")}</span>` : ""}</span><span class="attention-dot"></span></span>
+    <span class="stock-main"><span><span class="price">${priceText}</span><span class="change ${direction}">${hasChange ? pct(stock.changePct) : "—"}</span></span><svg class="spark" viewBox="0 0 94 34" aria-hidden="true"><polyline points="${sparkPoints(values)}"/></svg></span>
     <span class="stock-actions">${actions.map(action => `<span class="action ${esc(action)}">${esc(actionLabel(action))}</span>`).join("")}</span>
-    <span class="stock-meta"><span class="stock-tag">관심도 ${esc(String(stock.attention || "watch").toUpperCase())}</span><span>${esc(stock.market || "KRX")}</span></span></a>`;
+    <span class="stock-meta"><span class="stock-tag">신뢰도 ${esc(String(stock.confidence || stock.attention || "watch").toUpperCase())}</span><span>${esc(stock.market || "KRX")}</span></span></a>`;
+}
+function adaptRadar(data) {
+  const themes = (data.themes || []).map(theme => ({ ...theme, state:normalizedState(theme.state), description:theme.description || theme.summary }));
+  const nestedStocks = themes.flatMap(theme => (theme.stocks || []).map(stock => ({ ...stock, themeId:theme.id, themeName:theme.name })));
+  const byCode = new Map();
+  [...nestedStocks, ...(data.stocks || [])].forEach(stock => {
+    const code = String(stock.code || "");
+    if (!code) return;
+    byCode.set(code, { ...(byCode.get(code) || {}), ...stock, code });
+  });
+  return { ...data, themes, stocks:[...byCode.values()] };
 }
 function renderRadar(data) {
-  state.radar = data;
+  data = adaptRadar(data); state.radar = data;
   const themes = (data.themes || []).slice(0,2), stocks = (data.stocks || []).slice(0,6);
   $("#theme-grid").innerHTML = themes.length ? themes.map(themeCard).join("") : '<div class="message">현재 표시할 테마가 없습니다.</div>';
   $("#stock-grid").innerHTML = stocks.length ? stocks.map(stockCard).join("") : '<div class="message">현재 표시할 종목이 없습니다.</div>';
@@ -100,28 +117,38 @@ function archiveTarget(view, offset = 0) {
   const date = kstDate();
   if (view === "today") {
     date.setDate(date.getDate() - offset);
-    return { url:`${R2_BASE}/indexes/daily/${ymd(date)}.json`, label:ymd(date), button:formatKst(date,{month:"short",day:"numeric"}) };
+    return { url:`${R2_BASE}/indexes/daily/${ymd(date)}.json`, label:ymd(date), button:formatKst(date,{month:"short",day:"numeric"}), year:date.getFullYear(), month:date.getMonth(), day:date.getDate() };
   }
   if (view === "week") {
     date.setDate(date.getDate() - offset * 7);
     const value = isoWeek(date);
-    return { url:`${R2_BASE}/indexes/weekly/${value.year}/week-${String(value.week).padStart(2,"0")}.json`, label:`${value.year}년 ${value.week}주차`, button:`W${value.week}` };
+    return { url:`${R2_BASE}/indexes/weekly/${value.year}/week-${String(value.week).padStart(2,"0")}.json`, label:`${value.year}년 ${value.week}주차`, button:`W${value.week}`, year:value.year, week:value.week };
   }
   date.setMonth(date.getMonth() - offset);
-  return { url:`${R2_BASE}/indexes/monthly/${date.getFullYear()}/month-${String(date.getMonth()+1).padStart(2,"0")}.json`, label:`${date.getFullYear()}년 ${date.getMonth()+1}월`, button:`${date.getMonth()+1}월` };
+  return { url:`${R2_BASE}/indexes/monthly/${date.getFullYear()}/month-${String(date.getMonth()+1).padStart(2,"0")}.json`, label:`${date.getFullYear()}년 ${date.getMonth()+1}월`, button:`${date.getMonth()+1}월`, year:date.getFullYear(), month:date.getMonth() };
 }
-function normalizeTheme(theme) { return Array.isArray(theme) ? { name:theme[0], state:theme[1] } : theme; }
+function itemMatchesTarget(item, view, target) {
+  const value = item.timeKst || item.time;
+  if (!value) return false;
+  const date = kstDate(new Date(value));
+  if (view === "today") return date.getFullYear() === target.year && date.getMonth() === target.month && date.getDate() === target.day;
+  if (view === "week") { const week = isoWeek(date); return week.year === target.year && week.week === target.week; }
+  return date.getFullYear() === target.year && date.getMonth() === target.month;
+}
+function normalizeTheme(theme) { return Array.isArray(theme) ? { name:theme[0], state:theme[1] } : { ...theme, state:normalizedState(theme.state) }; }
 function normalizeStock(stock) { return Array.isArray(stock) ? { code:stock[0], name:stock[1], changePct:stock[2], actions:stock[3], attention:stock[4] } : stock; }
 function archiveTheme(theme) {
   return `<span class="mini-theme"><i aria-hidden="true">◎</i><b>${esc(theme.name || "—")}</b></span>`;
 }
 function archiveStock(stock) {
-  const direction = Number(stock.changePct) > 0 ? "up" : Number(stock.changePct) < 0 ? "down" : "";
-  return `<a class="mini-stock" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer"><b>${esc(stock.name || "—")}</b><small>${esc(stock.code || "—")}</small><i class="${direction}">${pct(stock.changePct)}</i></a>`;
+  const hasChange = stock.changePct != null && stock.changePct !== "";
+  const direction = hasChange && Number(stock.changePct) > 0 ? "up" : hasChange && Number(stock.changePct) < 0 ? "down" : "";
+  return `<a class="mini-stock" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer"><b>${esc(stock.name || stock.code || "—")}</b>${stock.name ? `<small>${esc(stock.code || "—")}</small>` : ""}<i class="${direction}">${hasChange ? pct(stock.changePct) : "—"}</i></a>`;
 }
 function archiveCard(item) {
   const themes = (item.themes || []).slice(0,2).map(normalizeTheme);
-  const stocks = (item.stocks || []).slice(0,6).map(normalizeStock);
+  const sourceStocks = item.stocks?.length ? item.stocks : themes.flatMap(theme => theme.stocks || []);
+  const stocks = [...new Map(sourceStocks.map(normalizeStock).filter(stock => stock.code).map(stock => [stock.code,stock])).values()].slice(0,6);
   const time = item.timeKst || item.time;
   return `<article class="archive-card">
     <header class="archive-time"><small>${time ? formatKst(time,{year:"numeric",month:"2-digit",day:"2-digit"}) : "—"}</small><strong>${time ? hhmm(time) : "—"}</strong><span>RADAR SNAPSHOT</span></header>
@@ -140,7 +167,7 @@ async function loadArchive(view, offset = 0) {
     const response = await fetch(target.url, { cache:"no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const items = (data.items || []).slice().sort((a,b) => new Date(b.timeKst || b.time || 0) - new Date(a.timeKst || a.time || 0));
+    const items = (data.items || []).filter(item => itemMatchesTarget(item, view, target)).sort((a,b) => new Date(b.timeKst || b.time || 0) - new Date(a.timeKst || a.time || 0));
     $("#archive-count").textContent = `${items.length} RADAR${items.length === 1 ? "" : "S"}`;
     $("#archive-list").innerHTML = items.length ? items.map(archiveCard).join("") : '<div class="message">이 기간에 저장된 Radar가 없습니다.</div>';
   } catch (_) {
