@@ -13,6 +13,10 @@ const THEME_ART = {
   "shipping":"supply-chain.jpg", "supply-chain":"supply-chain.jpg", "raw-materials":"supply-chain.jpg",
   "global-markets":"global-markets.jpg"
 };
+const THEME_LABELS = {
+  "fuel-price-refining-margin":"정유·에너지",
+  "kf21-long-range-aam-bid":"방위산업"
+};
 function themeArt(theme) {
   const key = theme.art || theme.background || theme.id || "market";
   return `assets/images/card-backgrounds/${THEME_ART[key] || THEME_ART.market}`;
@@ -50,16 +54,50 @@ function sparkPoints(values) {
 function actionLabel(action) {
   return { detect:"포착", analyze:"분석", insight:"인사이트", risk:"위험", opportunity:"기회" }[action] || action;
 }
+function themeTitle(theme) {
+  return theme.displayName || theme.category || THEME_LABELS[theme.id] || theme.name || "관심 테마";
+}
+function themeSummary(theme) {
+  return theme.summary || theme.description || theme.name || "시장의 관심 흐름을 관찰 중입니다.";
+}
+function stockNames(theme) {
+  return (theme.stocks || []).slice(0, 3).map(stock => stock.name || stock.code).filter(Boolean);
+}
+function safeUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) ? url.href : "";
+  } catch (_) { return ""; }
+}
+function evidenceList(items, emptyMessage) {
+  if (!Array.isArray(items) || !items.length) return `<p class="dialog-empty">${esc(emptyMessage)}</p>`;
+  return `<ul class="evidence-list">${items.map(item => {
+    const url = safeUrl(item.url);
+    const text = esc(item.text || "근거 설명 없음");
+    return `<li>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${text}<span aria-hidden="true">↗</span></a>` : `<span>${text}</span>`}</li>`;
+  }).join("")}</ul>`;
+}
 function themeCard(theme) {
   const stateValue = normalizedState(theme.state);
   const status = ["active","expanding"].includes(stateValue) ? "EXPANDING" : stateValue === "observe" ? "OBSERVE" : String(theme.state || "WATCH").toUpperCase();
+  const names = stockNames(theme);
   const firstMetric = theme.confidence
     ? `<small>신뢰도</small><strong class="teal">${esc(String(theme.confidence).toUpperCase())}</strong>`
     : `<small>검색 관심도</small><strong class="teal">${pct(theme.attentionChange)}</strong>`;
-  return `<div class="theme-card">
+  return `<button class="theme-card" type="button" data-theme-id="${esc(theme.id || "")}" aria-label="${esc(themeTitle(theme))} 조사 근거 열기">
     <span class="theme-art" style="background-image:url('${esc(themeArt(theme))}')"></span><span class="theme-content"><span class="status ${esc(stateValue)}">${esc(status)}</span>
-    <span class="theme-name">${esc(theme.name)}</span><span class="theme-description">${esc(theme.summary || theme.description || "시장의 관심 흐름을 관찰 중입니다.")}</span>
-    <span class="theme-metrics"><span class="metric">${firstMetric}</span><span class="metric"><small>관련 종목</small><strong>${number(theme.relatedStocks ?? theme.stockCodes?.length ?? theme.stocks?.length)}개</strong></span></span></span></div>`;
+    <span class="theme-name">${esc(themeTitle(theme))}</span><span class="theme-description">${esc(themeSummary(theme))}</span>
+    <span class="theme-metrics"><span class="metric">${firstMetric}</span><span class="metric theme-stocks"><small>관련 종목 ${number(theme.relatedStocks ?? theme.stockCodes?.length ?? theme.stocks?.length)}개</small><strong>${esc(names.join(" · ") || "—")}</strong></span></span></span></button>`;
+}
+function openThemeDialog(theme) {
+  if (!theme) return;
+  const dialog = $("#theme-dialog");
+  $("#theme-dialog-state").textContent = ["active", "expanding"].includes(normalizedState(theme.state)) ? "EXPANDING" : normalizedState(theme.state) === "observe" ? "OBSERVE" : String(theme.state || "WATCH").toUpperCase();
+  $("#theme-dialog-title").textContent = themeTitle(theme);
+  $("#theme-dialog-summary").textContent = themeSummary(theme);
+  $("#theme-dialog-evidence").innerHTML = evidenceList(theme.evidence, "표시할 테마 근거가 없습니다.");
+  $("#theme-dialog-stocks").innerHTML = (theme.stocks || []).map(stock => `<article class="dialog-stock"><div><strong>${esc(stock.name || stock.code || "—")}</strong><small>${esc(stock.code || "")}</small></div><p>${esc(stock.why || "관련 근거를 확인하세요.")}</p>${evidenceList(stock.evidence, "표시할 종목 근거가 없습니다.")}</article>`).join("") || '<p class="dialog-empty">표시할 관련 종목이 없습니다.</p>';
+  if (!dialog.open) dialog.showModal();
 }
 function stockCard(stock) {
   const values = (stock.intraday || []).map(point => Number(point.price));
@@ -185,6 +223,9 @@ function setView(view) {
 document.addEventListener("click", event => {
   const nav = event.target.closest("[data-view], [data-view-link]"); if (nav) { event.preventDefault(); setView(nav.dataset.view || nav.dataset.viewLink); }
   const control = event.target.closest("[data-offset]"); if (control) { state.offset=Number(control.dataset.offset); loadArchive(state.view,state.offset); }
+  const theme = event.target.closest("[data-theme-id]");
+  if (theme) openThemeDialog((state.radar?.themes || []).find(item => String(item.id || "") === theme.dataset.themeId));
+  if (event.target.closest("[data-dialog-close]")) $("#theme-dialog").close();
 });
 $("#refresh-button").addEventListener("click", loadRadar);
 window.addEventListener("hashchange", () => { const view=location.hash.slice(1); if (["now","today","week","month"].includes(view)) setView(view); });

@@ -78,6 +78,21 @@
     </section>
   </main>
 
+  <dialog class="theme-dialog" id="theme-dialog" aria-labelledby="theme-dialog-title">
+    <button class="dialog-close" type="button" data-dialog-close aria-label="팝업 닫기">×</button>
+    <span class="dialog-state" id="theme-dialog-state">OBSERVE</span>
+    <h2 id="theme-dialog-title">관심 테마</h2>
+    <p id="theme-dialog-summary"></p>
+    <section class="dialog-section" aria-labelledby="theme-dialog-evidence-title">
+      <h3 id="theme-dialog-evidence-title">수집한 뉴스 · 근거</h3>
+      <div id="theme-dialog-evidence"></div>
+    </section>
+    <section class="dialog-section" aria-labelledby="theme-dialog-stocks-title">
+      <h3 id="theme-dialog-stocks-title">관련 종목과 근거</h3>
+      <div class="dialog-stocks" id="theme-dialog-stocks"></div>
+    </section>
+  </dialog>
+
   <footer><strong>DK TRENDS</strong><span>© <span id="year"></span> DK Trends · Observe the market, then decide for yourself.</span></footer>
 
 </body>
