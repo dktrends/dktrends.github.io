@@ -157,7 +157,7 @@ function archiveTarget(view, offset = 0) {
   const date = kstDate();
   if (view === "today") {
     date.setDate(date.getDate() - offset);
-    return { url:`${R2_BASE}/indexes/daily/${ymd(date)}.json`, label:ymd(date), button:formatKst(date,{month:"short",day:"numeric"}), year:date.getFullYear(), month:date.getMonth(), day:date.getDate() };
+    return { url:`${R2_BASE}/indexes/daily/${ymd(date)}.json`, label:ymd(date), button:`${date.getMonth()+1}월 ${date.getDate()}일`, year:date.getFullYear(), month:date.getMonth(), day:date.getDate() };
   }
   if (view === "week") {
     date.setDate(date.getDate() - offset * 7);
