@@ -10,7 +10,7 @@ import {
   validateEnvelope,
   verifyPeriodIndex,
 } from './core';
-import type { IngestEnvelope, PeriodIndex, PublicResult, Radar } from './model';
+import type { IngestEnvelope, PeriodIndex, PriceSnapshot, PublicResult, Radar } from './model';
 
 const JSON_HTTP_METADATA = { contentType: 'application/json; charset=utf-8' } as const;
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -22,6 +22,31 @@ export default {
     if (!await authorized(request, env.INGEST_TOKEN)) return json({ error: { code: 'UNAUTHORIZED' } }, 401);
 
     const writer = env.RADAR_WRITER.getByName('global-radar-writer');
+
+    if (request.method === 'POST' && url.pathname === '/v1/price-snapshots') {
+      const body = await request.text();
+      if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) return json({ error: { code: 'PAYLOAD_TOO_LARGE' } }, 413);
+      try {
+        const snapshot = validatePriceSnapshot(JSON.parse(body));
+        const latest = await readJson<Radar>(env.RADAR_BUCKET, 'radar/latest.json');
+        if (!latest || latest.radarId !== snapshot.radarId) return json({ error: { code: 'STALE_RADAR' } }, 409);
+        const snapshotKey = priceSnapshotKey(snapshot.radarId);
+        await env.RADAR_BUCKET.put(snapshotKey, JSON.stringify(snapshot), {
+          httpMetadata: { ...JSON_HTTP_METADATA, cacheControl: 'no-store' },
+        });
+        await env.RADAR_BUCKET.put('prices/latest.json', JSON.stringify(snapshot), {
+          httpMetadata: { ...JSON_HTTP_METADATA, cacheControl: 'no-store' },
+        });
+        const verified = await readJson<PriceSnapshot>(env.RADAR_BUCKET, snapshotKey);
+        if (!verified || verified.radarId !== snapshot.radarId || verified.observedAtKst !== snapshot.observedAtKst) {
+          throw new IngestionError('PRICE_SNAPSHOT_VERIFY_FAILED', 'VERIFY_PRICE_SNAPSHOT', true);
+        }
+        return json({ radarId: snapshot.radarId, status: 'DONE', verified: true, completedAtKst: nowKst() });
+      } catch (error) {
+        const known = error instanceof IngestionError ? error : new IngestionError('INVALID_PRICE_SNAPSHOT', 'VALIDATE_PRICE_SNAPSHOT', false);
+        return json({ status: 'FAILED', verified: false, stage: known.stage, retryable: known.retryable, error: { code: known.code } }, known.retryable ? 500 : 400);
+      }
+    }
 
     if (request.method === 'POST' && url.pathname === '/v1/radar-ingestions') {
       const operationId = request.headers.get('Idempotency-Key')?.trim();
@@ -192,6 +217,37 @@ export class RadarWriter extends DurableObject<WorkerEnv> {
     const actualHash = object.customMetadata?.payloadHash ?? await sha256Hex(await object.text());
     if (actualHash !== expectedHash) throw new IngestionError('OBJECT_HASH_MISMATCH', stage, true);
   }
+}
+
+function validatePriceSnapshot(value: unknown): PriceSnapshot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new IngestionError('INVALID_PRICE_SNAPSHOT', 'VALIDATE_PRICE_SNAPSHOT', false);
+  const snapshot = value as Partial<PriceSnapshot>;
+  if (!/^\d{8}-\d{4}$/.test(snapshot.radarId ?? '')) throw new IngestionError('INVALID_RADAR_ID', 'VALIDATE_PRICE_SNAPSHOT', false);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?\+09:00$/.test(snapshot.observedAtKst ?? '')) {
+    throw new IngestionError('INVALID_OBSERVED_AT_KST', 'VALIDATE_PRICE_SNAPSHOT', false);
+  }
+  if (!Array.isArray(snapshot.stocks) || !snapshot.stocks.length || snapshot.stocks.length > 12) {
+    throw new IngestionError('INVALID_PRICE_STOCKS', 'VALIDATE_PRICE_SNAPSHOT', false);
+  }
+  const codes = new Set<string>();
+  for (const stock of snapshot.stocks) {
+    if (!stock || !/^\d{6}$/.test(stock.code) || !Number.isFinite(stock.price) || stock.price <= 0 || codes.has(stock.code)) {
+      throw new IngestionError('INVALID_PRICE_STOCK', 'VALIDATE_PRICE_SNAPSHOT', false);
+    }
+    codes.add(stock.code);
+    if (stock.changePct !== undefined && !Number.isFinite(stock.changePct)) throw new IngestionError('INVALID_CHANGE_PCT', 'VALIDATE_PRICE_SNAPSHOT', false);
+    if (stock.intraday !== undefined && (!Array.isArray(stock.intraday) || stock.intraday.length > 40 || stock.intraday.some(point =>
+      !point || !Number.isFinite(point.price) || point.price <= 0 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?\+09:00$/.test(point.observedAtKst)))) {
+      throw new IngestionError('INVALID_INTRADAY', 'VALIDATE_PRICE_SNAPSHOT', false);
+    }
+  }
+  return snapshot as PriceSnapshot;
+}
+
+function priceSnapshotKey(radarId: string): string {
+  const [, year, month, day, time] = radarId.match(/^(\d{4})(\d{2})(\d{2})-(\d{4})$/) ?? [];
+  if (!year || !month || !day || !time) throw new IngestionError('INVALID_RADAR_ID', 'BUILD_PRICE_SNAPSHOT_KEY', false);
+  return `prices/${year}/${month}/${day}/${time}.json`;
 }
 
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {

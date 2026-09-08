@@ -124,6 +124,30 @@ function adaptRadar(data) {
   });
   return { ...data, themes, stocks:[...byCode.values()] };
 }
+function mergePriceSnapshot(radar, snapshot) {
+  if (!snapshot || snapshot.radarId !== radar.radarId || !Array.isArray(snapshot.stocks)) return radar;
+  const prices = new Map(snapshot.stocks.filter(stock => stock && stock.code).map(stock => [String(stock.code), stock]));
+  const mergeStock = stock => ({ ...stock, ...(prices.get(String(stock.code)) || {}) });
+  return {
+    ...radar,
+    themes: (radar.themes || []).map(theme => ({ ...theme, stocks:(theme.stocks || []).map(mergeStock) })),
+    stocks: (radar.stocks || []).map(mergeStock),
+  };
+}
+function priceSnapshotUrl(radarId) {
+  const match = String(radarId || "").match(/^(\d{4})(\d{2})(\d{2})-(\d{4})$/);
+  return match ? `${R2_BASE}/prices/${match[1]}/${match[2]}/${match[3]}/${match[4]}.json?ts=${Date.now()}` : "";
+}
+async function mergeArchivePrices(items) {
+  return Promise.all(items.map(async item => {
+    const url = priceSnapshotUrl(item.radarId);
+    if (!url) return item;
+    try {
+      const response = await fetch(url, { cache:"no-store" });
+      return response.ok ? mergePriceSnapshot(item, await response.json()) : item;
+    } catch (_) { return item; }
+  }));
+}
 function renderRadar(data) {
   data = adaptRadar(data); state.radar = data;
   const themes = (data.themes || []).slice(0,2), stocks = (data.stocks || []).slice(0,6);
@@ -137,7 +161,13 @@ async function loadRadar() {
   try {
     const response = await fetch(`${R2_BASE}/radar/latest.json?ts=${Date.now()}`, { cache:"no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    renderRadar(await response.json());
+    const radar = await response.json();
+    try {
+      const prices = await fetch(`${R2_BASE}/prices/latest.json?ts=${Date.now()}`, { cache:"no-store" });
+      renderRadar(prices.ok ? mergePriceSnapshot(radar, await prices.json()) : radar);
+    } catch (_) {
+      renderRadar(radar);
+    }
   } catch (error) {
     try {
       const fallback = await fetch("data/radar/latest.json", { cache:"no-store" });
@@ -191,7 +221,8 @@ function archiveTheme(theme) {
 function archiveStock(stock) {
   const hasChange = stock.changePct != null && stock.changePct !== "";
   const direction = hasChange && Number(stock.changePct) > 0 ? "up" : hasChange && Number(stock.changePct) < 0 ? "down" : "";
-  return `<a class="mini-stock" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer"><b>${esc(stock.name || stock.code || "—")}</b>${stock.name ? `<small>${esc(stock.code || "—")}</small>` : ""}<i class="${direction}">${hasChange ? pct(stock.changePct) : "—"}</i></a>`;
+  const price = stock.price == null ? "" : `<span class="mini-price">₩${number(stock.price)}</span>`;
+  return `<a class="mini-stock" href="https://stock.naver.com/domestic/stock/${encodeURIComponent(stock.code || "")}/price" target="_blank" rel="noopener noreferrer"><b>${esc(stock.name || stock.code || "—")}</b>${stock.name ? `<small>${esc(stock.code || "—")}</small>` : ""}${price}<i class="${direction}">${hasChange ? pct(stock.changePct) : "—"}</i></a>`;
 }
 function archiveCard(item) {
   const themes = (item.themes || []).slice(0,2).map(normalizeTheme);
@@ -215,7 +246,8 @@ async function loadArchive(view, offset = 0) {
     const response = await fetch(target.url, { cache:"no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const items = (data.items || []).filter(item => itemMatchesTarget(item, view, target)).sort((a,b) => new Date(b.timeKst || b.time || 0) - new Date(a.timeKst || a.time || 0));
+    const sourceItems = (data.items || []).filter(item => itemMatchesTarget(item, view, target)).sort((a,b) => new Date(b.timeKst || b.time || 0) - new Date(a.timeKst || a.time || 0));
+    const items = await mergeArchivePrices(sourceItems);
     $("#archive-count").textContent = `${items.length} RADAR${items.length === 1 ? "" : "S"}`;
     $("#archive-list").innerHTML = items.length ? items.map(archiveCard).join("") : '<div class="message">이 기간에 저장된 Radar가 없습니다.</div>';
   } catch (_) {

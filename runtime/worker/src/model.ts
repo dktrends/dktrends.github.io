@@ -69,3 +69,21 @@ export interface PeriodIndex {
   updatedAt: string;
   items: Radar[];
 }
+
+export interface PricePoint {
+  observedAtKst: string;
+  price: number;
+}
+
+export interface PriceSnapshotStock {
+  code: string;
+  price: number;
+  changePct?: number;
+  intraday?: PricePoint[];
+}
+
+export interface PriceSnapshot {
+  radarId: string;
+  observedAtKst: string;
+  stocks: PriceSnapshotStock[];
+}
