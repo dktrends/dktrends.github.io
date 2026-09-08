@@ -1,5 +1,7 @@
 const R2_BASE = "https://pub-90c04d7ea8c243e4830ffc8ba8bfd594.r2.dev";
 const state = { radar: null, view: "now", offset: 0 };
+// The first month retained in R2. Monthly archive controls run from now back to here.
+const ARCHIVE_FIRST_MONTH = { year: 2026, month: 2 }; // March (zero-based month)
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value = "") => String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
@@ -160,10 +162,18 @@ function archiveTarget(view, offset = 0) {
   if (view === "week") {
     date.setDate(date.getDate() - offset * 7);
     const value = isoWeek(date);
-    return { url:`${R2_BASE}/indexes/weekly/${value.year}/week-${String(value.week).padStart(2,"0")}.json`, label:`${value.year}년 ${value.week}주차`, button:`W${value.week}`, year:value.year, week:value.week };
+    return { url:`${R2_BASE}/indexes/weekly/${value.year}/week-${String(value.week).padStart(2,"0")}.json`, label:`${value.year}년 ${value.week}주차`, button:`${value.year}-W${value.week}`, year:value.year, week:value.week };
   }
   date.setMonth(date.getMonth() - offset);
-  return { url:`${R2_BASE}/indexes/monthly/${date.getFullYear()}/month-${String(date.getMonth()+1).padStart(2,"0")}.json`, label:`${date.getFullYear()}년 ${date.getMonth()+1}월`, button:`${date.getMonth()+1}월`, year:date.getFullYear(), month:date.getMonth() };
+  return { url:`${R2_BASE}/indexes/monthly/${date.getFullYear()}/month-${String(date.getMonth()+1).padStart(2,"0")}.json`, label:`${date.getFullYear()}년 ${date.getMonth()+1}월`, button:`${date.getFullYear()}-${date.getMonth()+1}월`, year:date.getFullYear(), month:date.getMonth() };
+}
+function archiveControlCount(view) {
+  if (view === "today") return 7;
+  if (view === "week") return 6;
+  const now = kstDate();
+  const monthsInRetention = (now.getFullYear() - ARCHIVE_FIRST_MONTH.year) * 12
+    + now.getMonth() - ARCHIVE_FIRST_MONTH.month + 1;
+  return Math.max(1, monthsInRetention);
 }
 function itemMatchesTarget(item, view, target) {
   const value = item.timeKst || item.time;
@@ -199,7 +209,7 @@ async function loadArchive(view, offset = 0) {
   $("#archive-title").textContent = view === "today" ? "Today" : view === "week" ? "This Week" : "This Month";
   $("#archive-range").textContent = `${target.label}의 Radar Snapshot`;
   $("#archive-list").innerHTML = '<div class="message">데이터를 불러오는 중입니다.</div>';
-  const controls = Array.from({length:view === "today" ? 7 : 6}, (_,i) => archiveTarget(view,i));
+  const controls = Array.from({length:archiveControlCount(view)}, (_,i) => archiveTarget(view,i));
   $("#archive-controls").innerHTML = controls.map((item,i) => `<button class="archive-control ${i===offset?"active":""}" data-offset="${i}" type="button">${esc(item.button)}</button>`).join("");
   try {
     const response = await fetch(target.url, { cache:"no-store" });
